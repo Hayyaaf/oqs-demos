@@ -1,0 +1,56 @@
+name: Lint Dockerfiles
+
+# If this job is successful, the lint process is complete.
+# This does not mean the Dockerfiles are free of lint errors.
+# If the target folder is missing, the job will fail.
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch: 
+
+jobs:
+  lint-dockerfiles:
+    name: ${{ matrix.folder }}
+    runs-on: ubuntu-24.04
+
+    strategy:
+      fail-fast: false 
+      matrix:
+        folder: [curl, h2load, haproxy, httpd, locust, nginx, openssh, openssl3, openvpn, wireshark, ngtcp2]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install jq for JSON formatting
+        run: sudo apt-get install -y jq
+
+      - name: Lint Dockerfiles
+        run: |
+          # Verify the folder to lint exists
+          if [ ! -d "${{ matrix.folder }}" ]; then
+            echo "Folder ${{ matrix.folder }} does not exist"
+            exit 1
+          fi
+
+          # Find all Dockerfiles in the current folder
+          files=$(find ${{ matrix.folder }} -type f -name 'Dockerfile*')
+          if [ -z "$files" ]; then
+            echo "No Dockerfiles found in ${{ matrix.folder }}"
+            exit 1
+          fi
+
+          # Lint each Dockerfile and save the result in readable JSON format
+          for file in $files; do
+            echo "Linting $file"
+            docker run --rm -v "$(pwd):/workspace" -w /workspace hadolint/hadolint hadolint --no-fail --no-color --format json "$file" | jq '.' > "${file}_lint_report.json"
+          done
+
+      - name: Upload Lint Reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.folder }}
+          path: ${{ matrix.folder }}/*_lint_report.json 
